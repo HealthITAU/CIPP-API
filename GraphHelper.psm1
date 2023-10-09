@@ -116,6 +116,7 @@ function Get-GraphToken($tenantid, $scope, $AsApp, $AppID, $refreshToken, $Retur
     }
 }
 
+
 function Write-LogMessage ($message, $tenant = 'None', $API = 'None', $tenantId = $null, $user, $sev) {
     try {
         $username = ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($user)) | ConvertFrom-Json).userDetails
@@ -135,6 +136,7 @@ function Write-LogMessage ($message, $tenant = 'None', $API = 'None', $tenantId 
     $PartitionKey = (Get-Date -UFormat '%Y%m%d').ToString()
     $TableRow = @{
         'Tenant'       = [string]$tenant
+        'TenantID'     = [string]$tenantId
         'API'          = [string]$API
         'Message'      = [string]$message
         'Username'     = [string]$username
