@@ -38,7 +38,11 @@ else {
             Message  = $Row.Message
             User     = $Row.Username
             Severity = $Row.Severity
-            TenantID = $Row.TenantID
+            TenantID = if ($Row.TenantID -ne $null) {
+                            $Row.TenantID
+                        } else {
+                            'None'
+                        }
         }
     }
 
