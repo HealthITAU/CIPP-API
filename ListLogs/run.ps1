@@ -38,6 +38,7 @@ else {
             Message  = $Row.Message
             User     = $Row.Username
             Severity = $Row.Severity
+            TenantID = $Row.TenantID
         }
     }
 
