@@ -3,7 +3,9 @@ using namespace System.Net
 Function Invoke-ListUsers {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Identity.User.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
@@ -13,7 +15,7 @@ Function Invoke-ListUsers {
     $selectlist = 'id', 'accountEnabled', 'displayName', 'userPrincipalName', 'username', 'userType', 'createdDateTime', 'companyName', 'country', 'department', 'businessPhones', 'city', 'faxNumber', 'givenName', 'isResourceAccount', 'jobTitle', 'mobilePhone', 'officeLocation', 'postalCode', 'preferredDataLocation', 'preferredLanguage', 'mail', 'mailNickname', 'proxyAddresses', 'Aliases', 'otherMails', 'showInAddressList', 'state', 'streetAddress', 'surname', 'usageLocation', 'LicJoined', 'assignedLicenses', 'onPremisesSyncEnabled', 'OnPremisesImmutableId', 'onPremisesDistinguishedName', 'onPremisesLastSyncDateTime', 'primDomain', 'Tenant', 'CippStatus'
     # Write to the Azure Functions log stream.
     Write-Host 'PowerShell HTTP trigger function processed a request.'
-    $ConvertTable = Import-Csv Conversiontable.csv | Sort-Object -Property 'guid' -Unique
+    $ConvertTable = Import-Csv ConversionTable.csv | Sort-Object -Property 'guid' -Unique
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.TenantFilter
     $GraphFilter = $Request.Query.graphFilter
@@ -33,11 +35,8 @@ Function Invoke-ListUsers {
         $Table = Get-CIPPTable -TableName 'cacheusers'
         $Rows = Get-CIPPAzDataTableEntity @Table | Where-Object -Property Timestamp -GT (Get-Date).AddHours(-1)
         if (!$Rows) {
-            $Queue = New-CippQueueEntry -Name 'Users' -Link '/identity/administration/users?customerId=AllTenants'
-            Push-OutputBinding -Name listusers -Value "users/$($userid)?`$top=999&`$select=$($selectlist -join ',')&`$filter=$GraphFilter&`$count=true"
             [PSCustomObject]@{
-                Tenant  = 'Loading data for all tenants. Please check back after the job completes'
-                QueueId = $Queue.RowKey
+                Message = 'This function has been deprecated for all users, please use ListGraphRequest instead'
             }
         } else {
             $Rows.Data | ConvertFrom-Json | Select-Object $selectlist | ForEach-Object {
@@ -72,11 +71,11 @@ Function Invoke-ListUsers {
             Id              = $AuditlogsLogon.errorNumber
             Status          = $AuditlogsLogon.ResultStatus
         }
-        $GraphRequest = $GraphRequest | Select-Object *, 
+        $GraphRequest = $GraphRequest | Select-Object *,
         @{ Name = 'LastSigninApplication'; Expression = { $LastSignIn.AppDisplayName } },
         @{ Name = 'LastSigninDate'; Expression = { $($LastSignIn.CreatedDateTime | Out-String) } },
         @{ Name = 'LastSigninStatus'; Expression = { $AuditlogsLogon.operation } },
-        @{ Name = 'LastSigninResult'; Expression = { $LastSignIn.status } }, 
+        @{ Name = 'LastSigninResult'; Expression = { $LastSignIn.status } },
         @{ Name = 'LastSigninFailureReason'; Expression = { if ($LastSignIn.Id -eq 0) { 'Sucessfully signed in' } else { $LastSignIn.Id } } }
     }
     # Associate values to output bindings by calling 'Push-OutputBinding'.

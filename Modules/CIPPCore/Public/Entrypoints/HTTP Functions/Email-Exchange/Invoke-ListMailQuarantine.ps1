@@ -1,9 +1,9 @@
-using namespace System.Net
-
-Function Invoke-ListMailQuarantine {
+function Invoke-ListMailQuarantine {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.SpamFilter.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)

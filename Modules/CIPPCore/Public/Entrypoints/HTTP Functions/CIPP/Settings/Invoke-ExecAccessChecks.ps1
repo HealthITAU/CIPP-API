@@ -3,7 +3,9 @@ using namespace System.Net
 Function Invoke-ExecAccessChecks {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        CIPP.AppSettings.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
@@ -11,18 +13,29 @@ Function Invoke-ExecAccessChecks {
     $APIName = $TriggerMetadata.FunctionName
     Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
+    $Table = Get-CIPPTable -tablename 'AccessChecks'
 
     # Write to the Azure Functions log stream.
     Write-Host 'PowerShell HTTP trigger function processed a request.'
-    if ($Request.query.Permissions -eq 'true') {
-        $Results = Test-CIPPAccessPermissions -tenantfilter $ENV:tenantid -APIName $APINAME -ExecutingUser $request.headers.'x-ms-client-principal'
+    if ($Request.Query.Permissions -eq 'true') {
+        if ($Request.Query.Cached -eq 'true') {
+            $Data = (Get-CIPPAzDataTableEntity @Table -Filter "RowKey eq 'AccessPermissions'").Data | ConvertFrom-Json
+            $Results = $Data
+        } else {
+            $Results = Test-CIPPAccessPermissions -tenantfilter $ENV:TenantID -APIName $APINAME -ExecutingUser $Request.Headers.'x-ms-client-principal'
+        }
     }
 
-    if ($Request.query.Tenants -eq 'true') {
-        $Results = Test-CIPPAccessTenant -Tenantcsv $Request.body.TenantId
+    if ($Request.Query.Tenants -eq 'true') {
+        $Results = Test-CIPPAccessTenant -TenantCSV $Request.Body.tenantid -ExecutingUser $Request.Headers.'x-ms-client-principal'
     }
-    if ($Request.query.GDAP -eq 'true') {
-        $Results = Test-CIPPGDAPRelationships
+    if ($Request.Query.GDAP -eq 'true') {
+        if ($Request.Query.Cached -eq 'true') {
+            $Data = (Get-CIPPAzDataTableEntity @Table -Filter "RowKey eq 'GDAPRelationships'").Data | ConvertFrom-Json
+            $Results = $Data
+        } else {
+            $Results = Test-CIPPGDAPRelationships
+        }
     }
 
     $body = [pscustomobject]@{'Results' = $Results }

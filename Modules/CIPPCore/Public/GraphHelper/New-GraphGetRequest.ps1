@@ -11,8 +11,10 @@ function New-GraphGetRequest {
         $noPagination,
         $NoAuthCheck,
         $skipTokenCache,
+        $Caller,
         [switch]$ComplexFilter,
-        [switch]$CountOnly
+        [switch]$CountOnly,
+        [switch]$IncludeResponseHeaders
     )
 
     if ($NoAuthCheck -or (Get-AuthorisedRequest -Uri $uri -TenantID $tenantid)) {
@@ -35,7 +37,7 @@ function New-GraphGetRequest {
         if (!$Tenant) {
             $Tenant = @{
                 GraphErrorCount = 0
-                LastGraphError  = $null
+                LastGraphError  = ''
                 PartitionKey    = 'TenantFailed'
                 RowKey          = 'Failed'
             }
@@ -43,16 +45,43 @@ function New-GraphGetRequest {
 
         $ReturnedData = do {
             try {
-                $Data = (Invoke-RestMethod -Uri $nextURL -Method GET -Headers $headers -ContentType 'application/json; charset=utf-8')
+                $GraphRequest = @{
+                    Uri         = $nextURL
+                    Method      = 'GET'
+                    Headers     = $headers
+                    ContentType = 'application/json; charset=utf-8'
+                }
+                if ($IncludeResponseHeaders) {
+                    $GraphRequest.ResponseHeadersVariable = 'ResponseHeaders'
+                }
+                $Data = (Invoke-RestMethod @GraphRequest)
                 if ($CountOnly) {
                     $Data.'@odata.count'
-                    $nextURL = $null
+                    $NextURL = $null
                 } else {
-                    if ($data.value) { $data.value } else { ($Data) }
-                    if ($noPagination) { $nextURL = $null } else { $nextURL = $data.'@odata.nextLink' }
+                    if ($Data.PSObject.Properties.Name -contains 'value') { $data.value } else { $Data }
+                    if ($noPagination) {
+                        if ($Caller -eq 'Get-GraphRequestList') {
+                            @{ 'nextLink' = $data.'@odata.nextLink' }
+                        }
+                        $nextURL = $null
+                    } else {
+                        $NextPageUriFound = $false
+                        if ($IncludeResponseHeaders) {
+                            if ($ResponseHeaders.NextPageUri) {
+                                $NextURL = $ResponseHeaders.NextPageUri
+                                $NextPageUriFound = $true
+                            }
+                        }
+                        if (!$NextPageUriFound) {
+                            $nextURL = $data.'@odata.nextLink'
+                        }
+                    }
                 }
             } catch {
-                $Message = ($_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue).error.message
+                try {
+                    $Message = ($_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue).error.message
+                } catch { $Message = $null }
                 if ($Message -eq $null) { $Message = $($_.Exception.Message) }
                 if ($Message -ne 'Request not applicable to target tenant.' -and $Tenant) {
                     $Tenant.LastGraphError = $Message
@@ -61,8 +90,13 @@ function New-GraphGetRequest {
                 }
                 throw $Message
             }
-        } until ($null -eq $NextURL)
-        $Tenant.LastGraphError = ''
+        } until ([string]::IsNullOrEmpty($NextURL) -or $NextURL -is [object[]] -or ' ' -eq $NextURL)
+        if ($Tenant.PSObject.Properties.Name -notcontains 'LastGraphError') {
+            $Tenant | Add-Member -MemberType NoteProperty -Name 'LastGraphError' -Value '' -Force
+        } else {
+            $Tenant.LastGraphError = ''
+        }
+        $Tenant.GraphErrorCount = 0
         Update-AzDataTableEntity @TenantsTable -Entity $Tenant
         return $ReturnedData
     } else {

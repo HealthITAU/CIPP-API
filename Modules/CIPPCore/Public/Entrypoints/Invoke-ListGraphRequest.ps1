@@ -2,10 +2,9 @@
 function Invoke-ListGraphRequest {
     <#
     .FUNCTIONALITY
-    Entrypoint
-
+        Entrypoint
     .ROLE
-    Core.Read
+        CIPP.Core.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
@@ -15,15 +14,15 @@ function Invoke-ListGraphRequest {
     $Message = 'Accessed this API | Endpoint: {0}' -f $Request.Query.Endpoint
     Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message $Message -Sev 'Debug'
 
-    $CippLink = ([System.Uri]$TriggerMetadata.Headers.referer).PathAndQuery
+    $CippLink = ([System.Uri]$TriggerMetadata.Headers.Referer).PathAndQuery
 
     $Parameters = @{}
     if ($Request.Query.'$filter') {
-        $Parameters.'$filter' = $Request.Query.'$filter'
+        $Parameters.'$filter' = $Request.Query.'$filter' -replace '%tenantid%', $env:TenantId
     }
 
     if (!$Request.Query.'$filter' -and $Request.Query.graphFilter) {
-        $Parameters.'$filter' = $Request.Query.graphFilter
+        $Parameters.'$filter' = $Request.Query.graphFilter -replace '%tenantid%', $env:TenantId
     }
 
     if ($Request.Query.'$select') {
@@ -41,6 +40,7 @@ function Invoke-ListGraphRequest {
     if ($Request.Query.'$count') {
         $Parameters.'$count' = ([string]([System.Boolean]$Request.Query.'$count')).ToLower()
     }
+
 
     if ($Request.Query.'$orderby') {
         $Parameters.'$orderby' = $Request.Query.'$orderby'
@@ -76,12 +76,20 @@ function Invoke-ListGraphRequest {
         $GraphRequestParams.NoPagination = [System.Boolean]$Request.Query.NoPagination
     }
 
+    if ($Request.Query.manualPagination) {
+        $GraphRequestParams.NoPagination = [System.Boolean]$Request.Query.manualPagination
+    }
+
+    if ($Request.Query.nextLink) {
+        $GraphRequestParams.nextLink = $Request.Query.nextLink
+    }
+
     if ($Request.Query.CountOnly) {
         $GraphRequestParams.CountOnly = [System.Boolean]$Request.Query.CountOnly
     }
 
     if ($Request.Query.QueueNameOverride) {
-        $GraphRequestParams.QueueNameOverride = [System.Boolean]$Request.Query.QueueNameOverride
+        $GraphRequestParams.QueueNameOverride = [string]$Request.Query.QueueNameOverride
     }
 
     if ($Request.Query.ReverseTenantLookup) {
@@ -104,13 +112,19 @@ function Invoke-ListGraphRequest {
         }
     }
 
-    Write-Host ($GraphRequestParams | ConvertTo-Json)
+    if ($Request.Query.AsApp) {
+        $GraphRequestParams.AsApp = $true
+    }
 
     $Metadata = $GraphRequestParams
 
     try {
         $Results = Get-GraphRequestList @GraphRequestParams
-
+        if ($Results.nextLink -and $Request.Query.NoPagination) {
+            $Metadata['nextLink'] = $Results.nextLink | Select-Object -Last 1
+            #Results is an array of objects, so we need to remove the last object before returning
+            $Results = $Results | Select-Object -First ($Results.Count - 1)
+        }
         if ($Request.Query.ListProperties) {
             $Columns = ($Results | Select-Object -First 1).PSObject.Properties.Name
             $Results = $Columns | Where-Object { @('Tenant', 'CippStatus') -notcontains $_ }
@@ -135,7 +149,7 @@ function Invoke-ListGraphRequest {
 
     if ($request.Query.Sort) {
         $GraphRequestData.Results = $GraphRequestData.Results | Sort-Object -Property $request.Query.Sort
-    } 
+    }
     $Outputdata = $GraphRequestData | ConvertTo-Json -Depth 20 -Compress
 
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{

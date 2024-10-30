@@ -3,12 +3,15 @@ using namespace System.Net
 Function Invoke-ExecSetSharePointMember {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Sharepoint.Site.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-    $GroupId = (New-GraphGetRequest -uri "https://graph.microsoft.com/beta/groups?`$filter=mail eq '$($Request.Body.GroupID)'" -tenantid $Request.Body.TenantFilter).id
+
     if ($Request.body.SharePointType -eq 'Group') {
+        $GroupId = (New-GraphGetRequest -uri "https://graph.microsoft.com/beta/groups?`$filter=mail eq '$($Request.Body.GroupID)'" -tenantid $Request.Body.TenantFilter).id
         if ($Request.body.Add -eq $true) {
             $Results = Add-CIPPGroupMember -GroupType 'Team' -GroupID $GroupID -Member $Request.Body.input -TenantFilter $Request.Body.TenantFilter -ExecutingUser $request.headers.'x-ms-client-principal'
         } else {

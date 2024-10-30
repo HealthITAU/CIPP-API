@@ -3,7 +3,9 @@ using namespace System.Net
 Function Invoke-ListBPA {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Tenant.BestPracticeAnalyser.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
@@ -17,15 +19,18 @@ Function Invoke-ListBPA {
 
     # Get all possible JSON files for reports, find the correct one, select the Columns
     $JSONFields = @()
-    $Columns = $null
-(Get-ChildItem -Path 'Config\*.BPATemplate.json' -Recurse | Select-Object -ExpandProperty FullName | ForEach-Object {
-        $Template = $(Get-Content $_) | ConvertFrom-Json
+    $BPATemplateTable = Get-CippTable -tablename 'templates'
+    $Filter = "PartitionKey eq 'BPATemplate'"
+    $Templates = (Get-CIPPAzDataTableEntity @BPATemplateTable -Filter $Filter).JSON | ConvertFrom-Json
+
+    $Templates | ForEach-Object {
+        $Template = $_
         if ($Template.Name -eq $NAME) {
             $JSONFields = $Template.Fields | Where-Object { $_.StoreAs -eq 'JSON' } | ForEach-Object { $_.name }
             $Columns = $Template.fields.FrontendFields | Where-Object -Property name -NE $null
             $Style = $Template.Style
         }
-    })
+    }
 
 
     if ($Request.query.tenantFilter -ne 'AllTenants' -and $Style -eq 'Tenant') {
@@ -35,8 +40,11 @@ Function Invoke-ListBPA {
             $row = $_
             $JSONFields | ForEach-Object {
                 $jsonContent = $row.$_
-                if ($jsonContent -ne $null -and $jsonContent -ne 'FAILED') {
-                    $row.$_ = $jsonContent | ConvertFrom-Json -Depth 15
+                if (![string]::IsNullOrEmpty($jsonContent) -and $jsonContent -ne 'FAILED') {
+                    try {
+                        $row.$_ = $jsonContent | ConvertFrom-Json -Depth 15
+                    } catch {
+                    }
                 }
             }
             $row.PSObject.Properties | ForEach-Object {
@@ -46,13 +54,21 @@ Function Invoke-ListBPA {
 
         $Data = $mergedObject
     } else {
+        $AllowedTenants = Test-CIPPAccess -Request $Request -TenantList
         $Tenants = Get-Tenants -IncludeErrors
+        if ($AllowedTenants -notcontains 'AllTenants') {
+            $Tenants = $Tenants | Where-Object -Property customerId -In $AllowedTenants
+        }
+        Write-Information ($tenants.defaultDomainName | ConvertTo-Json)
         $Data = (Get-CIPPAzDataTableEntity @Table -Filter "RowKey eq '$NAME'") | ForEach-Object {
             $row = $_
             $JSONFields | ForEach-Object {
                 $jsonContent = $row.$_
-                if ($jsonContent -ne $null -and $jsonContent -ne 'FAILED') {
-                    $row.$_ = $jsonContent | ConvertFrom-Json -Depth 15
+                if (![string]::IsNullOrEmpty($jsonContent) -and $jsonContent -ne 'FAILED') {
+                    try {
+                        $row.$_ = $jsonContent | ConvertFrom-Json -Depth 15
+                    } catch {
+                    }
                 }
             }
             $row | Where-Object -Property PartitionKey -In $Tenants.customerId
@@ -63,7 +79,7 @@ Function Invoke-ListBPA {
 
     $Results = [PSCustomObject]@{
         Data    = @($Data)
-        Columns = $Columns
+        Columns = @($Columns)
         Style   = $Style
     }
 
